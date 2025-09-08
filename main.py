@@ -2,205 +2,405 @@ import os
 import random
 import shutil
 from collections import defaultdict
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from pathlib import Path
+import dearpygui.dearpygui as dpg
+import struct
+import re
+import json
+import logging
 
-class RPGShufflerGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("RPG Maker 2000 Corruptor - Main Window")
-        
-        # File types and their checkboxes
+class HATE2K:
+    def __init__(self):
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+        logging.info("HATE2K initialized")
         self.file_types = {
-            'Graphics - Charset': {'folder': 'CharSet', 'ext': ['.xyz', '.bmp', '.png'],},
-            'Graphics - Faceset': {'folder': 'FaceSet', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - Chipset': {'folder': 'ChipSet', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - Picture': {'folder': 'Picture', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - Title': {'folder': 'Title', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - Monster': {'folder': 'Monster', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - System': {'folder': 'System', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - Backdrop': {'folder': 'Backdrop', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - Battle': {'folder': 'Battle', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - Panorama': {'folder': 'Panorama', 'ext': ['.xyz', '.bmp', '.png']},
-            'Graphics - GameOver': {'folder': 'GameOver', 'ext': ['.xyz', '.bmp', '.png']},
-            'Music': {'folder': 'Music', 'ext': ['.mid', '.wav', '.mp3']},
-            'Sound' : {'folder': 'Sound', 'ext': ['.wav', '.mp3']},
-            'Maps (.lmu)': '.lmu'
+            'CharSet': ['.xyz', '.bmp', '.png'],
+            'FaceSet': ['.xyz', '.bmp', '.png'],
+            'ChipSet': ['.xyz', '.bmp', '.png'],
+            'Picture': ['.xyz', '.bmp', '.png'],
+            'Title': ['.xyz', '.bmp', '.png'],
+            'Monster': ['.xyz', '.bmp', '.png'],
+            'System': ['.xyz', '.bmp', '.png'],
+            'Backdrop': ['.xyz', '.bmp', '.png'],
+            'Battle': ['.xyz', '.bmp', '.png'],
+            'Panorama': ['.xyz', '.bmp', '.png'],
+            'GameOver': ['.xyz', '.bmp', '.png'],
+            'Music': ['.mid', '.wav', '.mp3'],
+            'Sound': ['.wav', '.mp3'],
+            'Maps': ['.lmu'],
+            'Dialogues': ['dialogue']
         }
         
-        self.checkboxes = {}
-        self.dir_path = tk.StringVar()
-        self.shuffle_size = tk.IntVar(value=100)  # Default 100%
+        self.game_dir = ""
+        self.shuffle_percentage = 100
+        self.selected_types = set(self.file_types.keys())
+        self.recent_folders = self.load_recent_folders()
         
-        self.create_gui()
+        self.setup_gui()
     
-    def create_gui(self):
-        # Directory selection
-        dir_frame = ttk.Frame(self.root, padding="5")
-        dir_frame.grid(row=0, column=0, columnspan=2, sticky="ew")
+    def setup_gui(self):
+        dpg.create_context()
         
-        ttk.Label(dir_frame, text="Game Directory:").pack(side=tk.LEFT)
-        ttk.Entry(dir_frame, textvariable=self.dir_path, width=50).pack(side=tk.LEFT, padx=5)
-        ttk.Button(dir_frame, text="Browse", command=self.browse_directory).pack(side=tk.LEFT)
+        with dpg.file_dialog(directory_selector=True, show=False, callback=self.dir_callback, tag="dir_dialog", width=700, height=400):
+            dpg.add_file_extension("", color=(255, 255, 255, 255))
         
-        # Add shuffle size slider
-        size_frame = ttk.LabelFrame(self.root, text="Shuffle Percentage", padding="5")
-        size_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        with dpg.window(label="HATE2K - RPG Maker 2000 Corruptor", tag="main", width=500, height=600):
+            dpg.add_text("Select RPG Maker 2000 game directory:")
+            
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(tag="dir_input", width=300, readonly=True)
+                dpg.add_button(label="Browse", callback=lambda: dpg.show_item("dir_dialog"))
+            
+            if self.recent_folders:
+                dpg.add_text("Recent folders:")
+                with dpg.group():
+                    for folder in self.recent_folders[:5]:
+                        if folder:  # Check if folder is not None
+                            dpg.add_button(label=os.path.basename(folder), callback=lambda s, a, folder=folder: self.load_recent_folder(folder), width=400)
+            
+            dpg.add_separator()
+            
+            dpg.add_text("Corruption Intensity:")
+            dpg.add_slider_int(tag="shuffle_slider", default_value=100, min_value=1, max_value=100, 
+                             format="%d%%", callback=self.update_percentage)
+            
+            dpg.add_separator()
+            
+            dpg.add_text("File Types to Corrupt:")
+            
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Select All", callback=self.select_all)
+                dpg.add_button(label="Deselect All", callback=self.deselect_all)
+            
+            for file_type in self.file_types:
+                if file_type == 'Dialogues':
+                    dpg.add_checkbox(label="Dialogues (text in maps)", 
+                                   tag=f"cb_{file_type}", default_value=True, callback=self.update_selection)
+                else:
+                    dpg.add_checkbox(label=f"{file_type} ({', '.join(self.file_types[file_type])})", 
+                                   tag=f"cb_{file_type}", default_value=True, callback=self.update_selection)
+            
+            dpg.add_separator()
+            
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="CORRUPT FILES", callback=self.corrupt_files, width=150, height=40)
+                dpg.add_button(label="RESTORE BACKUP", callback=self.restore_backup, width=150, height=40)
+            
+            dpg.add_separator()
+            dpg.add_text("Status:", tag="status")
         
-        self.size_label = ttk.Label(size_frame, text="100%")
-        self.size_label.pack(side=tk.RIGHT)
-        
-        size_slider = ttk.Scale(
-            size_frame,
-            from_=1,
-            to=100,
-            variable=self.shuffle_size,
-            orient=tk.HORIZONTAL,
-            command=self.update_size_label
-        )
-        size_slider.pack(fill=tk.X, padx=5, expand=True)
-        
-        # Checkboxes for file types
-        check_frame = ttk.LabelFrame(self.root, text="Select file types to shuffle", padding="5")
-        check_frame.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
-        
-        for i, (name, _) in enumerate(self.file_types.items()):
-            var = tk.BooleanVar(value=True)
-            self.checkboxes[name] = var
-            ttk.Checkbutton(check_frame, text=name, variable=var).grid(row=i, column=0, sticky="w")
-        
-        # Buttons frame
-        button_frame = ttk.Frame(self.root)
-        button_frame.grid(row=3, column=0, columnspan=2, pady=10)
-        ttk.Button(button_frame, text="Shuffle Files", command=self.shuffle_files).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Restore Backup", command=self.restore_backup).pack(side=tk.LEFT, padx=5)
+        dpg.create_viewport(title="HATE2K", width=520, height=650)
+        dpg.setup_dearpygui()
+        dpg.show_viewport()
+        dpg.set_primary_window("main", True)
     
-    def update_size_label(self, *args):
-        self.size_label.config(text=f"{self.shuffle_size.get()}%")
+    def dir_callback(self, sender, app_data):
+        self.game_dir = app_data['file_path_name']
+        dpg.set_value("dir_input", self.game_dir)
+        dpg.set_value("status", f"Selected: {self.game_dir}")
+        logging.debug(f"Directory selected: {self.game_dir}")
+        self.add_recent_folder(self.game_dir)
     
-    def browse_directory(self):
-        directory = filedialog.askdirectory()
-        if directory:
-            self.dir_path.set(directory)
+    def load_recent_folder(self, folder):
+        if folder and os.path.exists(folder):
+            self.game_dir = folder
+            dpg.set_value("dir_input", self.game_dir)
+            dpg.set_value("status", f"Selected: {self.game_dir}")
     
-    def shuffle_files(self):
-        directory = self.dir_path.get()
-        if not os.path.exists(directory):
-            messagebox.showerror("Error", "Directory not found!")
+    def load_recent_folders(self):
+        try:
+            with open("recent_folders.json", "r") as f:
+                return json.load(f)
+        except:
+            return []
+    
+    def add_recent_folder(self, folder):
+        if folder in self.recent_folders:
+            self.recent_folders.remove(folder)
+        self.recent_folders.insert(0, folder)
+        self.recent_folders = self.recent_folders[:10]
+        try:
+            with open("recent_folders.json", "w") as f:
+                json.dump(self.recent_folders, f)
+        except:
+            pass
+    
+    def update_percentage(self, sender, app_data):
+        self.shuffle_percentage = app_data
+    
+    def update_selection(self, sender, app_data):
+        file_type = sender.replace("cb_", "")
+        if app_data:
+            self.selected_types.add(file_type)
+        else:
+            self.selected_types.discard(file_type)
+    
+    def select_all(self):
+        for file_type in self.file_types:
+            dpg.set_value(f"cb_{file_type}", True)
+        self.selected_types = set(self.file_types.keys())
+    
+    def deselect_all(self):
+        for file_type in self.file_types:
+            dpg.set_value(f"cb_{file_type}", False)
+        self.selected_types.clear()
+    
+    def corrupt_files(self):
+        if not self.game_dir or not os.path.exists(self.game_dir):
+            dpg.set_value("status", "Error: Invalid directory!")
             return
         
-        # Get selected extensions
-        selected_extensions = []
-        for name, var in self.checkboxes.items():
-            if var.get():
-                ext = self.file_types[name]
-                if isinstance(ext, list):
-                    selected_extensions.extend(ext)
-                else:
-                    selected_extensions.append(ext)
+        if not self.selected_types:
+            dpg.set_value("status", "Error: No file types selected!")
+            return
         
         try:
-            self.shuffle_rpg_files(directory, selected_extensions)
-            messagebox.showinfo("Success", "Files shuffled successfully!\nOriginal files backed up in 'backup' folder.")
+            dpg.set_value("status", "Corrupting files...")
+            logging.info(f"Starting corruption process for {self.game_dir}")
+            logging.debug(f"Selected file types: {self.selected_types}")
+            logging.debug(f"Corruption intensity: {self.shuffle_percentage}%")
+            corrupted_count = self._process_corruption()
+            dpg.set_value("status", f"Success! Corrupted {corrupted_count} files. Backup created.")
+            logging.info(f"Corruption completed: {corrupted_count} files corrupted")
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {str(e)}")
+            dpg.set_value("status", f"Error: {str(e)}")
+            logging.error(f"Corruption failed: {str(e)}")
     
-    def shuffle_rpg_files(self, directory, selected_extensions):
-        files_by_ext = defaultdict(list)
+    def _process_corruption(self):
+        game_path = Path(self.game_dir)
+        backup_path = game_path / "backup"
+        backup_path.mkdir(exist_ok=True)
         
-        # Scan directory and special folders
-        for name, var in self.checkboxes.items():
-            if not var.get():
-                continue
-                
-            file_type = self.file_types[name]
-            if isinstance(file_type, dict):  # Special folder handling
-                folder_path = os.path.join(directory, file_type['folder'])
-                if os.path.exists(folder_path):
-                    for filename in os.listdir(folder_path):
-                        ext = os.path.splitext(filename)[1].lower()
-                        if isinstance(file_type['ext'], list):
-                            if ext in file_type['ext']:
-                                full_path = os.path.join(file_type['folder'], filename)
-                                files_by_ext[file_type['folder']].append(full_path)
-                        elif filename.lower().endswith(file_type['ext']):
-                            full_path = os.path.join(file_type['folder'], filename)
-                            files_by_ext[file_type['folder']].append(full_path)
-            else:  # Regular file handling
-                for filename in os.listdir(directory):
-                    ext = os.path.splitext(filename)[1].lower()
-                    if isinstance(file_type, list):
-                        if ext in file_type:
-                            files_by_ext[ext].append(filename)
-                    elif ext == file_type:
-                        files_by_ext[ext].append(filename)
+        files_by_type = defaultdict(list)
         
-        # Create backup directory
-        backup_dir = os.path.join(directory, 'backup')
-        os.makedirs(backup_dir, exist_ok=True)
+        # Collect files
+        logging.debug("Starting file collection")
+        for file_type in self.selected_types:
+            if file_type == "Maps":
+                for file in game_path.glob("*.lmu"):
+                    files_by_type[file_type].append(file)
+                    logging.debug(f"Found map file: {file.name}")
+            elif file_type == "Dialogues":
+                for file in game_path.glob("*.lmu"):
+                    files_by_type[file_type].append(file)
+                    logging.debug(f"Found dialogue file: {file.name}")
+            else:
+                folder_path = game_path / file_type
+                if folder_path.exists():
+                    for ext in self.file_types[file_type]:
+                        found_files = list(folder_path.glob(f"*{ext}"))
+                        files_by_type[file_type].extend(found_files)
+                        logging.debug(f"Found {len(found_files)} {ext} files in {file_type}")
+                else:
+                    logging.debug(f"Folder not found: {folder_path}")
+        
+        total_corrupted = 0
         
         # Process each file type
-        for ext, files in files_by_ext.items():
-            if len(files) < 2:
-                continue
+        logging.debug(f"Processing {len(files_by_type)} file types")
+        for file_type, files in files_by_type.items():
+            logging.debug(f"Processing {file_type}: {len(files)} files")
+            if file_type == "Dialogues":
+                dialogue_count = self._corrupt_dialogues(files, backup_path)
+                logging.debug(f"Corrupted {dialogue_count} dialogue files")
+                total_corrupted += dialogue_count
+            else:
+                if len(files) < 2:
+                    logging.debug(f"Skipping {file_type}: insufficient files ({len(files)})")
+                    continue
                 
-            shuffle_count = max(2, int(len(files) * (self.shuffle_size.get() / 100)))
-            files_to_shuffle = random.sample(files, shuffle_count)
+                corrupt_count = max(2, int(len(files) * (self.shuffle_percentage / 100)))
+                files_to_corrupt = random.sample(files, min(corrupt_count, len(files)))
+                logging.debug(f"Corrupting {len(files_to_corrupt)} of {len(files)} {file_type} files")
+                
+                for file in files_to_corrupt:
+                    if file_type == "Maps":
+                        backup_file = backup_path / file.name
+                    else:
+                        type_backup = backup_path / file_type
+                        type_backup.mkdir(exist_ok=True)
+                        backup_file = type_backup / file.name
+                    shutil.copy2(file, backup_file)
+                    logging.debug(f"Backed up: {file.name}")
+                
+                shuffled = files_to_corrupt.copy()
+                while any(f1 == f2 for f1, f2 in zip(files_to_corrupt, shuffled)):
+                    random.shuffle(shuffled)
+                
+                temp_data = {}
+                for file in files_to_corrupt:
+                    with open(file, 'rb') as f:
+                        temp_data[file] = f.read()
+                
+                for orig_file, new_file in zip(files_to_corrupt, shuffled):
+                    with open(orig_file, 'wb') as f:
+                        f.write(temp_data[new_file])
+                    logging.debug(f"Swapped {orig_file.name} with {new_file.name}")
+                
+                total_corrupted += len(files_to_corrupt)
+                logging.debug(f"Completed {file_type} corruption: {len(files_to_corrupt)} files")
+        
+        return total_corrupted
+    
+    def _find_dialogue_strings(self, data):
+        """Find dialogue strings using 0x20 start and 0x00 end pattern"""
+        dialogue_texts = []
+        i = 0
+        
+        while i < len(data) - 2:
+            # Look for dialogue start marker (0x20)
+            if data[i] == 0x20:
+                start_pos = i + 1  # Text starts after 0x20
+                
+                # Find the end marker (0x00)
+                end_pos = start_pos
+                while end_pos < len(data) and data[end_pos] != 0x00:
+                    end_pos += 1
+                
+                # Check if we found a valid dialogue string
+                if end_pos < len(data) and end_pos > start_pos:
+                    text_bytes = data[start_pos:end_pos]
+                    try:
+                        text = text_bytes.decode('shift_jis', errors='ignore')
+                        if self._is_actual_dialogue(text):
+                            dialogue_texts.append((start_pos, end_pos - start_pos, text))
+                            logging.debug(f"Found dialogue: '{text[:30]}...'")
+                            i = end_pos + 1
+                            continue
+                    except UnicodeDecodeError:
+                        pass
+            i += 1
+                
+        return dialogue_texts
+    
+    def _is_actual_dialogue(self, text):
+        """Check if text is actual dialogue and not system data"""
+        text_clean = text.strip()
+        
+        # Must be at least 8 characters for dialogue
+        if len(text_clean) < 8:
+            return False
+        
+        # Count special characters and control codes
+        special_chars = sum(1 for c in text_clean if ord(c) < 32 or c in '►♠♣♥♦☺☻♪♫☼►◄↕‼¶§▬↨↑↓→←∟↔▲▼')
+        
+        # Skip if more than 20% special characters
+        if special_chars > len(text_clean) * 0.2:
+            return False
+        
+        # Skip if it's all numbers or basic symbols
+        if re.match(r'^[0-9\s\.,;:!?\-_#$%&*()\[\]{}=+]+$', text_clean):
+            return False
+        
+        # Skip file references
+        if any(ext in text_clean.lower() for ext in ['.xyz', '.bmp', '.png', '.wav', '.mid', '.mp3', '.lmu']):
+            return False
+        
+        # Skip common system keywords
+        system_words = ['map', 'event', 'switch', 'variable', 'common', 'battle', 'item', 'gold', 'exp', 'hp', 'mp', 'atk', 'def', 'int', 'agi', 'redsky']
+        if any(word in text_clean.lower() for word in system_words):
+            return False
+        
+        # Must contain normal letters (not just symbols)
+        normal_chars = sum(1 for c in text_clean if c.isalnum() or c.isspace() or c in '.,!?')
+        if normal_chars < len(text_clean) * 0.6:
+            return False
+        
+        # Must have at least 2 words or be longer than 15 chars
+        if len(text_clean.split()) < 2 and len(text_clean) < 15:
+            return False
             
-            temp_dir = os.path.join(directory, f'temp_{ext}')
-            os.makedirs(temp_dir, exist_ok=True)
+        return True
+    
+    def _corrupt_dialogues(self, map_files, backup_path):
+        all_texts = []
+        file_data = {}
+        
+        # Extract dialogue text using 0x20/0x00 pattern
+        for map_file in map_files:
+            with open(map_file, 'rb') as f:
+                data = f.read()
             
-            # Backup and shuffle selected files
-            for file in files_to_shuffle:
-                src = os.path.join(directory, file)
-                backup_path = os.path.join(backup_dir, os.path.dirname(file))
-                os.makedirs(backup_path, exist_ok=True)
-                dst = os.path.join(backup_dir, file)
-                shutil.copy2(src, dst)
+            dialogue_texts = self._find_dialogue_strings(data)
+            if dialogue_texts:
+                file_data[map_file] = (data, dialogue_texts)
+                all_texts.extend([text for _, _, text in dialogue_texts])
+                logging.debug(f"Found {len(dialogue_texts)} dialogue texts in {map_file.name}")
+        
+        if len(all_texts) < 2:
+            logging.debug("Not enough dialogue texts found for corruption")
+            return 0
+        
+        # Shuffle all dialogue texts
+        shuffled_texts = all_texts.copy()
+        random.shuffle(shuffled_texts)
+        
+        corrupted_count = 0
+        text_index = 0
+        
+        # Replace dialogue text in files
+        for map_file, (data, dialogue_texts) in file_data.items():
+            backup_file = backup_path / map_file.name
+            shutil.copy2(map_file, backup_file)
             
-            shuffled = files_to_shuffle.copy()
-            while any(f1 == f2 for f1, f2 in zip(files_to_shuffle, shuffled)):
-                random.shuffle(shuffled)
+            new_data = bytearray(data)
             
-            # Apply shuffling
-            for orig, shuf in zip(files_to_shuffle, shuffled):
-                src = os.path.join(directory, orig)
-                temp = os.path.join(temp_dir, os.path.basename(orig))
-                shutil.copy2(src, temp)
+            for pos, length, original_text in dialogue_texts:
+                if text_index < len(shuffled_texts):
+                    new_text = shuffled_texts[text_index]
+                    new_bytes = new_text.encode('shift_jis', errors='ignore')
+                    
+                    # Maintain original length to preserve structure
+                    if len(new_bytes) > length:
+                        new_bytes = new_bytes[:length]
+                    elif len(new_bytes) < length:
+                        # Pad with spaces instead of null bytes to prevent cutoff
+                        new_bytes += b' ' * (length - len(new_bytes))
+                    
+                    new_data[pos:pos + length] = new_bytes
+                    logging.debug(f"Replaced dialogue: '{original_text[:20]}...' -> '{new_text[:20]}...'")
+                    text_index += 1
             
-            for orig, shuf in zip(files_to_shuffle, shuffled):
-                temp = os.path.join(temp_dir, os.path.basename(shuf))
-                dst = os.path.join(directory, orig)
-                shutil.copy2(temp, dst)
+            with open(map_file, 'wb') as f:
+                f.write(new_data)
             
-            shutil.rmtree(temp_dir)
+            corrupted_count += 1
+        
+        return corrupted_count
     
     def restore_backup(self):
-        directory = self.dir_path.get()
-        backup_dir = os.path.join(directory, 'backup')
-        
-        if not os.path.exists(backup_dir):
-            messagebox.showerror("Error", "No backup folder found!")
+        if not self.game_dir:
+            dpg.set_value("status", "Error: No directory selected!")
             return
-            
+        
+        backup_path = Path(self.game_dir) / "backup"
+        if not backup_path.exists():
+            dpg.set_value("status", "Error: No backup found!")
+            return
+        
         try:
-            # Recursively copy all files from backup directory back to main directory
-            for root, dirs, files in os.walk(backup_dir):
-                relative_path = os.path.relpath(root, backup_dir)
-                for file in files:
-                    src = os.path.join(root, file)
-                    dst_dir = os.path.join(directory, relative_path)
-                    dst = os.path.join(dst_dir, file)
-                    os.makedirs(dst_dir, exist_ok=True)
-                    shutil.copy2(src, dst)
+            dpg.set_value("status", "Restoring backup...")
+            logging.info(f"Starting backup restoration for {self.game_dir}")
+            restored_count = 0
             
-            # Remove backup directory
-            shutil.rmtree(backup_dir)
-            messagebox.showinfo("Success", "Backup restored successfully!")
+            for backup_file in backup_path.rglob("*"):
+                if backup_file.is_file():
+                    relative_path = backup_file.relative_to(backup_path)
+                    target_file = Path(self.game_dir) / relative_path
+                    target_file.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(backup_file, target_file)
+                    restored_count += 1
+            
+            dpg.set_value("status", f"Success! Restored {restored_count} files.")
+            logging.info(f"Backup restoration completed: {restored_count} files restored")
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred while restoring: {str(e)}")
+            dpg.set_value("status", f"Error restoring: {str(e)}")
+            logging.error(f"Backup restoration failed: {str(e)}")
+    
+    def run(self):
+        dpg.start_dearpygui()
+        dpg.destroy_context()
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = RPGShufflerGUI(root)
-    root.mainloop()
+    app = HATE2K()
+    app.run()
