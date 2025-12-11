@@ -1,3 +1,4 @@
+# NOTICE!!! THIS IS GETTING DEPRECATED IN FAVOR OF A EASYRPG FORK COMING SOON!!!
 # HATE2K
 This is a corruptor for RPG Maker 2k(3) games.
 
