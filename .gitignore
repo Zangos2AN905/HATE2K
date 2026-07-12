@@ -1,0 +1,6 @@
+games/
+build/
+
+*.log
+desktop.ini
+thumbs.db

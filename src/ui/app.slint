@@ -1,0 +1,217 @@
+import { Button, VerticalBox, HorizontalBox, GroupBox, LineEdit,
+         CheckBox, ScrollView, Switch } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "HATE2K — RPG Maker 2000/2003 Shuffler";
+    preferred-width: 960px;
+    preferred-height: 800px;
+
+    in-out property <string> game-path: "";
+    in property <string> engine-label: "";
+    in property <bool> game-detected: false;
+    in property <string> status: "Select an RPG Maker 2000/2003 game folder.";
+    in property <bool> is-processing: false;
+    in-out property <bool> backup-enabled: true;
+    in property <string> log-text: "";
+
+    // ── Asset toggles ──────────────────────────────────────────────────
+    in-out property <bool> shuffle-charset: true;
+    in-out property <bool> shuffle-chipset: true;
+    in-out property <bool> shuffle-faceset: true;
+    in-out property <bool> shuffle-monster: true;
+    in-out property <bool> shuffle-panorama: true;
+    in-out property <bool> shuffle-picture: false;
+    in-out property <bool> shuffle-system: true;
+    in-out property <bool> shuffle-title: false;
+    in-out property <bool> shuffle-backdrop: true;
+    in-out property <bool> shuffle-battle: true;
+    in-out property <bool> shuffle-battle2: false;
+    in-out property <bool> shuffle-battlecharset: false;
+    in-out property <bool> shuffle-battleweapon: false;
+    in-out property <bool> shuffle-frame: false;
+    in-out property <bool> shuffle-gameover: false;
+    in-out property <bool> shuffle-system2: false;
+    in-out property <bool> shuffle-music: false;
+    in-out property <bool> shuffle-sound: false;
+
+    // ── Dialogue engine toggles ────────────────────────────────────────
+    in-out property <bool> dlg-across-maps: true;
+    in-out property <bool> dlg-within-maps: false;
+    in-out property <bool> dlg-shuffle-words: false;
+    in-out property <bool> dlg-random-case: false;
+    in-out property <bool> dlg-markov: false;
+
+    // ── Data toggles ──────────────────────────────────────────────────
+    in-out property <bool> data-transfers: false;
+    in-out property <bool> data-characters: false;
+
+    // ── Callbacks ──────────────────────────────────────────────────────
+    callback select-folder();
+    callback shuffle-requested();
+    callback restore-backup-requested();
+
+    VerticalBox {
+        padding: 12px;
+        spacing: 8px;
+
+        Text {
+            text: "HATE2K — Shuffler";
+            font-size: 22px;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        // ── Game folder ────────────────────────────────────────────────
+        GroupBox {
+            title: "Game Folder";
+            VerticalBox {
+                spacing: 6px;
+                HorizontalBox {
+                    spacing: 8px;
+                    LineEdit {
+                        text: root.game-path;
+                        placeholder-text: "Path to RPG Maker game…";
+                        read-only: true;
+                        horizontal-stretch: 1;
+                    }
+                    Button {
+                        text: "Browse…";
+                        clicked => { root.select-folder(); }
+                    }
+                }
+                if root.game-detected: Text {
+                    text: root.engine-label;
+                    color: #4caf50;
+                    font-size: 13px;
+                }
+                if !root.game-detected && root.game-path != "": Text {
+                    text: "No RPG_RT.ldb found in this folder.";
+                    color: #ff9800;
+                    font-size: 13px;
+                }
+            }
+        }
+
+        // ── Asset categories ───────────────────────────────────────────
+        GroupBox {
+            title: "Asset Categories";
+            ScrollView {
+                VerticalBox {
+                    spacing: 4px;
+                    Text { text: "Graphics"; font-weight: 600; font-size: 13px; }
+                    HorizontalBox {
+                        spacing: 14px;
+                        CheckBox { text: "CharSet";  checked <=> root.shuffle-charset; }
+                        CheckBox { text: "ChipSet";  checked <=> root.shuffle-chipset; }
+                        CheckBox { text: "FaceSet";  checked <=> root.shuffle-faceset; }
+                        CheckBox { text: "Monster";  checked <=> root.shuffle-monster; }
+                    }
+                    HorizontalBox {
+                        spacing: 14px;
+                        CheckBox { text: "Panorama"; checked <=> root.shuffle-panorama; }
+                        CheckBox { text: "Picture";  checked <=> root.shuffle-picture; }
+                        CheckBox { text: "System";   checked <=> root.shuffle-system; }
+                        CheckBox { text: "Title";    checked <=> root.shuffle-title; }
+                    }
+                    HorizontalBox {
+                        spacing: 14px;
+                        CheckBox { text: "Backdrop"; checked <=> root.shuffle-backdrop; }
+                        CheckBox { text: "Battle";   checked <=> root.shuffle-battle; }
+                    }
+                    Text { text: "RPG Maker 2003 Only"; font-weight: 600; font-size: 13px; }
+                    HorizontalBox {
+                        spacing: 14px;
+                        CheckBox { text: "Battle2";       checked <=> root.shuffle-battle2; }
+                        CheckBox { text: "BattleCharSet"; checked <=> root.shuffle-battlecharset; }
+                        CheckBox { text: "BattleWeapon";  checked <=> root.shuffle-battleweapon; }
+                    }
+                    HorizontalBox {
+                        spacing: 14px;
+                        CheckBox { text: "Frame";    checked <=> root.shuffle-frame; }
+                        CheckBox { text: "GameOver"; checked <=> root.shuffle-gameover; }
+                        CheckBox { text: "System2";  checked <=> root.shuffle-system2; }
+                    }
+                    Text { text: "Audio"; font-weight: 600; font-size: 13px; }
+                    HorizontalBox {
+                        spacing: 14px;
+                        CheckBox { text: "Music (BGM/ME)"; checked <=> root.shuffle-music; }
+                        CheckBox { text: "Sound (SE)";     checked <=> root.shuffle-sound; }
+                    }
+                }
+            }
+        }
+
+        // ── Dialogue engines ───────────────────────────────────────────
+        GroupBox {
+            title: "Dialogue Engines";
+            VerticalBox {
+                spacing: 4px;
+                CheckBox { text: "Shuffle dialogue across maps";          checked <=> root.dlg-across-maps; }
+                CheckBox { text: "Shuffle dialogue within each map";      checked <=> root.dlg-within-maps; }
+                CheckBox { text: "Shuffle words between messages";         checked <=> root.dlg-shuffle-words; }
+                CheckBox { text: "Randomise letter case";                  checked <=> root.dlg-random-case; }
+                CheckBox { text: "Generate Markov-chain nonsense";         checked <=> root.dlg-markov; }
+            }
+        }
+
+        // ── Data shuffling ─────────────────────────────────────────────
+        GroupBox {
+            title: "Data";
+            VerticalBox {
+                spacing: 4px;
+                CheckBox { text: "Shuffle map transfers (teleport destinations)"; checked <=> root.data-transfers; }
+                CheckBox { text: "Shuffle player characters (names, sprites)";    checked <=> root.data-characters; }
+            }
+        }
+
+        // ── Controls ───────────────────────────────────────────────────
+        HorizontalBox {
+            spacing: 12px;
+            alignment: center;
+            HorizontalBox {
+                spacing: 6px;
+                Text { text: "Backup first"; vertical-alignment: center; }
+                Switch { checked <=> root.backup-enabled; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Button {
+                text: "Restore Backup";
+                enabled: !root.is-processing && root.game-detected;
+                clicked => { root.restore-backup-requested(); }
+            }
+            Button {
+                text: root.is-processing ? "Shuffling…" : "Shuffle";
+                primary: true;
+                enabled: !root.is-processing && root.game-detected;
+                clicked => { root.shuffle-requested(); }
+            }
+        }
+
+        // ── Log ────────────────────────────────────────────────────────
+        GroupBox {
+            title: "Log";
+            vertical-stretch: 1;
+            ScrollView {
+                Text {
+                    text: root.log-text;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    color: #b0b0b0;
+                }
+            }
+        }
+
+        // ── Status bar ─────────────────────────────────────────────────
+        Rectangle {
+            height: 26px;
+            background: #1e1e1e;
+            Text {
+                text: root.status;
+                font-size: 12px;
+                color: #7ec87e;
+                vertical-alignment: center;
+                x: 8px;
+            }
+        }
+    }
+}
