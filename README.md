@@ -1,4 +1,4 @@
-# NOTICE!!! THIS IS GETTING DEPRECATED IN FAVOR OF A EASYRPG FORK COMING SOON!!!
+# NOTICE!!! THIS IS GETTING REWRITTEN IN C++!! Meaning more features and a full game merger!
 # HATE2K
 This is a corruptor for RPG Maker 2k(3) games.
 
