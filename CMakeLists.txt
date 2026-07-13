@@ -18,7 +18,7 @@ FetchContent_Declare(
 # ── liblcf (RPG Maker 2000/2003 LCF parser) ───────────────────────────
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(LIBLCF_WITH_INI OFF CACHE BOOL "" FORCE)
-set(LIBLCF_WITH_ICU OFF CACHE BOOL "" FORCE)
+set(LIBLCF_WITH_ICU ON CACHE BOOL "" FORCE)
 set(LIBLCF_WITH_XML OFF CACHE BOOL "" FORCE)
 set(LIBLCF_ENABLE_TOOLS OFF CACHE BOOL "" FORCE)
 set(LIBLCF_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
@@ -34,6 +34,7 @@ add_executable(hate2k
     src/main.cpp
     src/corruptor.cpp
     src/dialogue.cpp
+    src/merger.cpp
 )
 
 slint_target_sources(hate2k src/ui/app.slint)

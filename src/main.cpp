@@ -1,6 +1,7 @@
 #include "app.h"
 #include "corruptor.h"
 #include "dialogue.h"
+#include "merger.h"
 
 #include <slint.h>
 
@@ -266,6 +267,97 @@ int main() {
                     ui->set_log_text(slint::SharedString(final_log));
                     ui->set_status(slint::SharedString("Restore error."));
                     ui->set_is_processing(false);
+                });
+            }
+        }).detach();
+    });
+
+    // ── Merger: game list management ──────────────────────────────────
+    std::vector<std::string> merge_games;
+
+    auto update_merge_display = [&]() {
+        std::string display;
+        for (size_t i = 0; i < merge_games.size(); ++i) {
+            display += std::to_string(i + 1) + ". " +
+                       fs::path(merge_games[i]).filename().string() + "\n";
+        }
+        ui->set_merge_game_list(slint::SharedString(display));
+        ui->set_merge_game_count(static_cast<int>(merge_games.size()));
+
+        std::string status;
+        if (merge_games.empty()) {
+            status = "Add two or more RPG Maker game folders to merge.";
+        } else if (merge_games.size() == 1) {
+            status = "Add at least one more game to merge.";
+        } else {
+            status = std::to_string(merge_games.size()) + " games ready to merge.";
+        }
+        ui->set_merge_status(slint::SharedString(status));
+    };
+
+    ui->on_merge_add_game([&]() {
+        std::string path = pick_folder_native();
+        if (path.empty()) return;
+        if (!hate2k::detect_game(path)) {
+            ui->set_merge_status(slint::SharedString(
+                "No RPG_RT.ldb found in the selected folder."));
+            return;
+        }
+        merge_games.push_back(path);
+        update_merge_display();
+        ui->set_merge_log_text(slint::SharedString(""));
+    });
+
+    ui->on_merge_remove_last([&]() {
+        if (!merge_games.empty()) {
+            merge_games.pop_back();
+            update_merge_display();
+        }
+    });
+
+    // ── Merge request ──────────────────────────────────────────────────
+    ui->on_merge_requested([&]() {
+        if (merge_games.size() < 2) return;
+
+        ui->set_merge_is_processing(true);
+        ui->set_merge_status(slint::SharedString("Merging…"));
+
+        std::vector<fs::path> paths(merge_games.begin(), merge_games.end());
+        bool do_assets = ui->get_merge_assets();
+
+        std::thread([&, paths, do_assets]() {
+            std::ostringstream log_stream;
+            auto log_fn = [&log_stream](const std::string& msg) {
+                log_stream << msg << "\n";
+            };
+
+            try {
+                auto result = hate2k::merge_games(paths, do_assets, log_fn);
+
+                std::string final_log = log_stream.str();
+                std::string final_status = "Merge complete — " +
+                    std::to_string(result.games_merged) + " games, " +
+                    std::to_string(result.maps_merged) + " maps merged.";
+
+                slint::invoke_from_event_loop([&, final_log, final_status]() {
+                    ui->set_merge_log_text(slint::SharedString(final_log));
+                    ui->set_merge_status(slint::SharedString(final_status));
+                    ui->set_merge_is_processing(false);
+                });
+            } catch (const std::exception& ex) {
+                log_stream << "\nERROR: " << ex.what() << "\n";
+                std::string final_log = log_stream.str();
+                slint::invoke_from_event_loop([&, final_log]() {
+                    ui->set_merge_log_text(slint::SharedString(final_log));
+                    ui->set_merge_status(slint::SharedString("Error — see log for details."));
+                    ui->set_merge_is_processing(false);
+                });
+            } catch (...) {
+                std::string final_log = log_stream.str() + "\nERROR: Unknown crash caught.\n";
+                slint::invoke_from_event_loop([&, final_log]() {
+                    ui->set_merge_log_text(slint::SharedString(final_log));
+                    ui->set_merge_status(slint::SharedString("Unknown error."));
+                    ui->set_merge_is_processing(false);
                 });
             }
         }).detach();
