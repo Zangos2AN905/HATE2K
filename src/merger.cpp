@@ -691,6 +691,22 @@ static void remap_db_asset_names(lcf::rpg::Database& db, const IdOffsets& off,
         for (auto& pose : ba.poses) remap_asset_str(pose.battler_name, renames);
         for (auto& w : ba.weapons) remap_asset_str(w.weapon_name, renames);
     }
+    // Remap asset filenames in common event commands (ShowPicture, PlayBGM, etc.)
+    for (int i = off.commonevents; i < (int)db.commonevents.size(); ++i) {
+        for (auto& cmd : db.commonevents[i].event_commands) {
+            auto code = static_cast<EC>(cmd.code);
+            if (code == EC::PlayBGM || code == EC::PlaySound ||
+                code == EC::ShowPicture || code == EC::MovePicture ||
+                code == EC::ChangeSpriteAssociation ||
+                code == EC::ChangeActorFace ||
+                code == EC::ChangeVehicleGraphic ||
+                code == EC::ChangeSystemGraphics ||
+                code == EC::ChangePBG ||
+                code == EC::ChangeBattleBG) {
+                remap_asset_str(cmd.string, renames);
+            }
+        }
+    }
 }
 
 // ============================================================================
